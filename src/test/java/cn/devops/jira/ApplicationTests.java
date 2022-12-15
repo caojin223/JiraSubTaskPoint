@@ -1,9 +1,9 @@
 package cn.devops.jira;
 
 import cn.devops.jira.model.JiraProjectModel;
-import cn.devops.jira.model.JiraSprintModel;
-import cn.devops.jira.model.JiraSubtaskModel;
+import cn.devops.jira.model.JiraSprintResModel;
 import cn.devops.jira.service.JiraService;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,14 +24,8 @@ class ApplicationTests {
         List<JiraProjectModel> projects = jiraService.getProjects();
         Assert.isTrue(projects.size() > 0, "项目不能为空");
         for (JiraProjectModel project : projects) {
-            List<JiraSprintModel> sprints = jiraService.getSprintByProject(project.getKey());
-
-            for (JiraSprintModel sprint : sprints) {
-                List<JiraSubtaskModel> tasks = jiraService.getSubtaskBySprint(sprint.getId());
-                for (JiraSubtaskModel task : tasks) {
-                    log.info(task.toString());
-                }
-            }
+            List<JiraSprintResModel> sprints = jiraService.getSubtaskByProjectKey(project.getKey());
+            log.info(JSONObject.toJSONString(sprints));
         }
     }
 }

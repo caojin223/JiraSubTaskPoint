@@ -3,9 +3,12 @@ jira:
   username: admin
   password: admin
   pointName: Story Point
+  sprintName: Sprint
 
   apiProject: /rest/api/latest/project
-  apiBoards: /rest/agile/1.0/board?projectKeyOrId=%s&maxResults=300
-  apiSprint: /rest/agile/1.0/board/%s/sprint?state=future,active&maxResults=300
-  jql: /rest/api/latest/search?expand=names&maxResults=300&jql=%s
-  jqlQuery: issuetype = 子任务 AND Sprint = %s AND "%s" > 0
+  apiField: /rest/api/latest/field
+  # /rest/agile的maxResults不能设置为-1，小于1时，会自动变为1
+  apiBoards: /rest/agile/latest/board?projectKeyOrId=%s&maxResults=1000
+  apiSprint: /rest/agile/latest/board/%s/sprint?state=future,active&maxResults=1000
+  jql: /rest/api/latest/search
+  jqlQuery: issuetype = 子任务 AND Sprint in (%s)

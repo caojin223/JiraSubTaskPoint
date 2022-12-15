@@ -2,7 +2,7 @@ package cn.devops.jira.service;
 
 import cn.devops.jira.model.JiraProjectModel;
 import cn.devops.jira.model.JiraSprintModel;
-import cn.devops.jira.model.JiraSubtaskModel;
+import cn.devops.jira.model.JiraSprintResModel;
 
 import java.util.List;
 
@@ -13,11 +13,9 @@ public interface JiraService {
 
     List<JiraProjectModel> getProjects();
 
-    List<JiraSprintModel> getSprintByProject(String project);
+    List<JiraSprintModel> getSprintByProjectKey(String projectKey);
 
-    List<JiraSubtaskModel> getSubtaskBySprint(int sprintId);
-
-    List<JiraSubtaskModel> getSubtaskByProject(String project);
+    List<JiraSprintResModel> getSubtaskByProjectKey(String projectKey);
 
     void disposeHttp();
 }

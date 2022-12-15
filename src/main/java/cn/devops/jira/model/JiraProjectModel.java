@@ -3,8 +3,6 @@ package cn.devops.jira.model;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
-
 @Getter
 @Setter
 public class JiraProjectModel {
@@ -12,5 +10,4 @@ public class JiraProjectModel {
     String key;
     String name;
     String projectTypeKey;
-    List<JiraSprintModel> sprints;
 }

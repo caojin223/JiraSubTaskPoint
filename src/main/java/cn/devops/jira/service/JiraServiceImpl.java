@@ -1,10 +1,7 @@
 package cn.devops.jira.service;
 
 import cn.devops.jira.config.JiraProperties;
-import cn.devops.jira.model.JiraHttpResponse;
-import cn.devops.jira.model.JiraProjectModel;
-import cn.devops.jira.model.JiraSprintModel;
-import cn.devops.jira.model.JiraSubtaskModel;
+import cn.devops.jira.model.*;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
@@ -12,17 +9,19 @@ import org.apache.http.HttpEntity;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.protocol.HTTP;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.util.Base64Util;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.yaml.snakeyaml.util.UriEncoder;
 
+import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author caojin
@@ -34,8 +33,11 @@ public class JiraServiceImpl implements JiraService {
 
     CloseableHttpClient client = HttpClients.createDefault();
 
-    @Autowired
-    JiraProperties jiraProperties;
+    private final JiraProperties jiraProperties;
+
+    public JiraServiceImpl(JiraProperties jiraProperties) {
+        this.jiraProperties = jiraProperties;
+    }
 
     @Override
     public void disposeHttp() {
@@ -54,12 +56,51 @@ public class JiraServiceImpl implements JiraService {
             url = "/" + url;
         }
         HttpGet getRequest = new HttpGet(jiraProperties.getHost() + url);
-        log.info("request url: " + getRequest.getURI());
+        log.info("GET url: " + getRequest.getURI());
         getRequest.setHeader("Accept", "application/json");
         getRequest.setHeader(HTTP.CONTENT_TYPE, "application/json;charset=UTF-8");
         String auth = Base64Util.encode(jiraProperties.getUsername() + ":" + jiraProperties.getPassword());
         getRequest.setHeader("Authorization", "Basic " + auth);
         try (CloseableHttpResponse response = client.execute(getRequest)) {
+            int statusCode = response.getStatusLine().getStatusCode();
+            log.info("httpStatus: " + statusCode);
+            if (statusCode == HttpStatus.SC_OK) {
+                HttpEntity entity = response.getEntity();
+                if (entity != null) {
+                    String body = EntityUtils.toString(entity, "UTF-8");
+                    log.info("body length:" + body.length());
+                    rst.setBody(body);
+                    rst.setSuccess(true);
+                }
+            }
+        } catch (IOException e) {
+            log.error("Jira http error", e);
+            rst.setException(e.getMessage());
+        }
+        return rst;
+    }
+
+    private JiraHttpResponse postJqlRequest(List<Integer> sprintIds) {
+        JiraHttpResponse rst = new JiraHttpResponse();
+        HttpPost httpPost = new HttpPost(jiraProperties.getHost() + jiraProperties.getJql());
+        log.info("POST url: " + httpPost.getURI());
+        httpPost.setHeader("Accept", "application/json");
+        httpPost.setHeader(HTTP.CONTENT_TYPE, "application/json;charset=UTF-8");
+        String auth = Base64Util.encode(jiraProperties.getUsername() + ":" + jiraProperties.getPassword());
+        httpPost.setHeader("Authorization", "Basic " + auth);
+
+        JSONObject json = new JSONObject();
+        json.put("maxResults", -1);
+        JSONArray fields = json.putArray("fields");
+        fields.addAll(Arrays.asList("summary", "assignee", "status", taskPointKey, sprintKey));
+        String ids = sprintIds.stream().map(Object::toString).collect(Collectors.joining(","));
+        json.put("jql", String.format(jiraProperties.getJqlQuery(), ids));
+        StringEntity bodyEntity = new StringEntity(json.toString(), "utf-8");
+        bodyEntity.setContentEncoding("UTF-8");
+        bodyEntity.setContentType("application/json");
+        httpPost.setEntity(bodyEntity);
+
+        try (CloseableHttpResponse response = client.execute(httpPost)) {
             int statusCode = response.getStatusLine().getStatusCode();
             log.info("httpStatus: " + statusCode);
             if (statusCode == HttpStatus.SC_OK) {
@@ -104,13 +145,11 @@ public class JiraServiceImpl implements JiraService {
         return rst;
     }
 
-    private String storyPoint;
-
     @Override
-    public List<JiraSprintModel> getSprintByProject(String project) {
+    public List<JiraSprintModel> getSprintByProjectKey(String projectKey) {
         List<JiraSprintModel> rst = new ArrayList<>();
         Set<Integer> sprintIds = new HashSet<>();
-        List<Integer> boardIds = getBoardIdByProject(project);
+        List<Integer> boardIds = getBoardIdByProject(projectKey);
         for (Integer boardId : boardIds) {
             JiraHttpResponse response = getRequest(String.format(jiraProperties.getApiSprint(), boardId));
             if (response.isSuccess()) {
@@ -124,54 +163,115 @@ public class JiraServiceImpl implements JiraService {
                 }
             }
         }
+        rst.sort(Comparator.comparingInt(JiraSprintModel::getId));
         return rst;
     }
 
-    @Override
-    public List<JiraSubtaskModel> getSubtaskByProject(String project) {
-        return null;
+    private int getSprintId(JSONObject issue) {
+        JSONObject fields = issue.getJSONObject("fields");
+        String sprintStr = fields.getJSONArray(sprintKey).getString(0);
+        sprintStr = sprintStr.substring(sprintStr.indexOf("[") + 1, sprintStr.length() - 1);
+        String[] split = sprintStr.split(",");
+        for (String item : split) {
+            String[] items = item.split("=");
+            if ("id".equals(items[0])) {
+                return Integer.parseInt(items[1]);
+            }
+        }
+        return -1;
+    }
+
+    private void addTaskToAssignee(JSONObject issue, Map<Integer, Map<String, JiraAssigneeResModel>> sprintMap) {
+        JiraSubtaskModel task = new JiraSubtaskModel();
+        task.setId(issue.getString("id"));
+        task.setKey(issue.getString("key"));
+        JSONObject fields = issue.getJSONObject("fields");
+        task.setSummary(fields.getString("summary"));
+        task.setStatus(fields.getJSONObject("status").getString("name"));
+        task.setPoint(fields.getInteger(taskPointKey));
+        JSONObject assignee = fields.getJSONObject("assignee");
+        String assigneeName = assignee == null ? null : assignee.getString("key");
+        int sprintId = getSprintId(issue);
+        Map<String, JiraAssigneeResModel> map = sprintMap.computeIfAbsent(sprintId, v -> new HashMap<>());
+        JiraAssigneeResModel assigneeRes = map.computeIfAbsent(assigneeName, v -> {
+            JiraAssigneeResModel e;
+            if (assignee != null) {
+                e = assignee.to(JiraAssigneeResModel.class);
+                e.setAvatarUrl(assignee.getJSONObject("avatarUrls").getString("48x48"));
+            } else {
+                e = new JiraAssigneeResModel();
+            }
+            return e;
+        });
+        assigneeRes.setPointCount(assigneeRes.getPointCount() + task.getPoint());
+        assigneeRes.getSubtasks().add(task);
     }
 
     @Override
-    public List<JiraSubtaskModel> getSubtaskBySprint(int sprintId) {
-        List<JiraSubtaskModel> rst = new ArrayList<>();
-        String pointName = jiraProperties.getPointName();
-        String jql = jiraProperties.getJqlQuery();
-        String jqlQuery = String.format(jql, sprintId, pointName);
-        jqlQuery = UriEncoder.encode(jqlQuery);
-        JiraHttpResponse response = getRequest(String.format(jiraProperties.getJql(), jqlQuery));
-        if (response.isSuccess()) {
-            String body = response.getBody();
-            JSONObject json = JSONObject.parseObject(body);
-            if (storyPoint == null) {
-                JSONObject names = json.getJSONObject("names");
-                for (Map.Entry<String, Object> entry : names.entrySet()) {
-                    if (pointName.equals(entry.getValue())) {
-                        storyPoint = entry.getKey();
-                        break;
-                    }
+    public List<JiraSprintResModel> getSubtaskByProjectKey(String projectKey) {
+        List<JiraSprintResModel> rst = getSprintByProjectKey(projectKey).stream()
+                .map(JiraSprintResModel::init).collect(Collectors.toList());
+        if (rst.size() > 0) {
+            List<Integer> sprintIds = new ArrayList<>();
+            rst.forEach(e -> sprintIds.add(e.getId()));
+            Map<Integer, Map<String, JiraAssigneeResModel>> sprint2assigneeMap = new HashMap<>(rst.size());
+            JiraHttpResponse response = postJqlRequest(sprintIds);
+            if (response.isSuccess()) {
+                String body = response.getBody();
+                JSONObject json = JSONObject.parseObject(body);
+                JSONArray issues = json.getJSONArray("issues");
+                for (int i = 0; i < issues.size(); i++) {
+                    JSONObject issue = issues.getJSONObject(i);
+                    addTaskToAssignee(issue, sprint2assigneeMap);
                 }
             }
-
-            JSONArray values = json.getJSONArray("issues");
-            for (int i = 0; i < values.size(); i++) {
-                JSONObject value = values.getJSONObject(i);
-                JiraSubtaskModel task = new JiraSubtaskModel();
-                task.setId(value.getInteger("id"));
-                task.setKey(value.getString("key"));
-                JSONObject fields = value.getJSONObject("fields");
-                task.setSummary(fields.getString("summary"));
-                task.setProject(fields.getJSONObject("project").getString("name"));
-                task.setStoryKey(fields.getJSONObject("parent").getString("key"));
-                task.setSprintId(sprintId);
-                task.setState(fields.getJSONObject("status").getString("name"));
-                task.setPoint(fields.getInteger(storyPoint));
-                JSONObject assignee = fields.getJSONObject("assignee");
-                task.setAssigneeKey(assignee.getString("key"));
-                task.setAssigneeName(assignee.getString("displayName"));
-                task.setAvatarUrls(assignee.getJSONObject("avatarUrls").getString("48x48"));
-                rst.add(task);
+            for (JiraSprintResModel sprint : rst) {
+                Map<String, JiraAssigneeResModel> assigneeMap = sprint2assigneeMap.get(sprint.getId());
+                JiraAssigneeResModel nullAssignee = null;
+                if (assigneeMap.containsKey(null)) {
+                    nullAssignee = assigneeMap.remove(null);
+                }
+                List<JiraAssigneeResModel> assignees = assigneeMap.values().stream()
+                        .sorted((o1, o2) -> Integer.compare(o2.getPointCount(), o1.getPointCount()))
+                        .collect(Collectors.toList());
+                if (nullAssignee != null) {
+                    sprint.getAssignees().add(nullAssignee);
+                }
+                sprint.getAssignees().addAll(assignees);
             }
+        }
+
+        return rst;
+    }
+
+    private String taskPointKey;
+    private String sprintKey;
+
+    @PostConstruct
+    void initCustomField() {
+        List<JiraFieldModel> fields = getFields();
+        for (JiraFieldModel field : fields) {
+            if (field.isCustom()) {
+                if (jiraProperties.getPointName().equals(field.getName())) {
+                    taskPointKey = field.getId();
+                }
+                if (jiraProperties.getSprintName().equals(field.getName())) {
+                    sprintKey = field.getId();
+                }
+                if (taskPointKey != null && sprintKey != null) {
+                    break;
+                }
+            }
+        }
+    }
+
+    private List<JiraFieldModel> getFields() {
+        List<JiraFieldModel> rst = new ArrayList<>();
+        JiraHttpResponse response = getRequest(jiraProperties.getApiField());
+        if (response.isSuccess()) {
+            String body = response.getBody();
+            JSONArray array = JSONArray.parse(body);
+            return array.toJavaList(JiraFieldModel.class);
         }
         return rst;
     }

@@ -25,14 +25,24 @@ public class JiraProperties {
     String password;
 
     /**
-     * jira subTask，用于表示工时的自定义的字段名
+     * jira subTask的custom field point的名称，用于匹配id，如：customfield_10013
      */
     String pointName;
+
+    /**
+     * jira custom field Sprint的名称，用于匹配id，如：customfield_10007
+     */
+    String sprintName;
 
     /**
      * jira获取项目列表的api地址
      */
     String apiProject;
+
+    /**
+     * jira获取所有Field
+     */
+    String apiField;
 
     /**
      * jira获取项目看板的api地址
@@ -49,5 +59,8 @@ public class JiraProperties {
      */
     String jql;
 
+    /**
+     * jira查询subtask的jql
+     */
     String jqlQuery;
 }
