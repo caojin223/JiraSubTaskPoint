@@ -1,0 +1,11 @@
+jira:
+  host: http://localhost:2990/jira
+  username: admin
+  password: admin
+  pointName: Story Point
+
+  apiProject: /rest/api/latest/project
+  apiBoards: /rest/agile/1.0/board?projectKeyOrId=%s&maxResults=300
+  apiSprint: /rest/agile/1.0/board/%s/sprint?state=future,active&maxResults=300
+  jql: /rest/api/latest/search?expand=names&maxResults=300&jql=%s
+  jqlQuery: issuetype = 子任务 AND Sprint = %s AND "%s" > 0
