@@ -2,6 +2,7 @@ package cn.devops.jira.service;
 
 import cn.devops.jira.config.JiraProperties;
 import cn.devops.jira.model.*;
+import cn.devops.jira.util.TimeTools;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.apache.http.HttpStatus;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -50,45 +52,17 @@ public class JiraServiceImpl implements JiraService {
     }
 
     private JiraHttpResponse getRequest(String url) {
-        JiraHttpResponse rst = new JiraHttpResponse();
         url = url.replace("//", "/");
         if (!url.startsWith("/")) {
             url = "/" + url;
         }
         HttpGet getRequest = new HttpGet(jiraProperties.getHost() + url);
-        log.info("GET url: " + getRequest.getURI());
-        getRequest.setHeader("Accept", "application/json");
-        getRequest.setHeader(HTTP.CONTENT_TYPE, "application/json;charset=UTF-8");
-        String auth = Base64Util.encode(jiraProperties.getUsername() + ":" + jiraProperties.getPassword());
-        getRequest.setHeader("Authorization", "Basic " + auth);
-        try (CloseableHttpResponse response = client.execute(getRequest)) {
-            int statusCode = response.getStatusLine().getStatusCode();
-            log.info("httpStatus: " + statusCode);
-            if (statusCode == HttpStatus.SC_OK) {
-                HttpEntity entity = response.getEntity();
-                if (entity != null) {
-                    String body = EntityUtils.toString(entity, "UTF-8");
-                    log.info("body length:" + body.length());
-                    rst.setBody(body);
-                    rst.setSuccess(true);
-                }
-            }
-        } catch (IOException e) {
-            log.error("Jira http error", e);
-            rst.setException(e.getMessage());
-        }
-        return rst;
+        return httpRequest(getRequest);
     }
 
     private JiraHttpResponse postJqlRequest(String jql) {
-        JiraHttpResponse rst = new JiraHttpResponse();
         HttpPost httpPost = new HttpPost(jiraProperties.getHost() + jiraProperties.getJql());
         log.info("POST url: " + httpPost.getURI());
-        httpPost.setHeader("Accept", "application/json");
-        httpPost.setHeader(HTTP.CONTENT_TYPE, "application/json;charset=UTF-8");
-        String auth = Base64Util.encode(jiraProperties.getUsername() + ":" + jiraProperties.getPassword());
-        httpPost.setHeader("Authorization", "Basic " + auth);
-
         JSONObject json = new JSONObject();
         json.put("maxResults", -1);
         JSONArray fields = json.putArray("fields");
@@ -98,8 +72,18 @@ public class JiraServiceImpl implements JiraService {
         bodyEntity.setContentEncoding("UTF-8");
         bodyEntity.setContentType("application/json");
         httpPost.setEntity(bodyEntity);
+        return httpRequest(httpPost);
+    }
 
-        try (CloseableHttpResponse response = client.execute(httpPost)) {
+    private JiraHttpResponse httpRequest(HttpUriRequest request) {
+        JiraHttpResponse rst = new JiraHttpResponse();
+        log.info("{}: {}", request.getMethod(), request.getURI());
+        request.setHeader("Accept", "application/json");
+        request.setHeader(HTTP.CONTENT_TYPE, "application/json;charset=UTF-8");
+        String auth = Base64Util.encode(jiraProperties.getUsername() + ":" + jiraProperties.getPassword());
+        request.setHeader("Authorization", "Basic " + auth);
+        long startTime = TimeTools.now();
+        try (CloseableHttpResponse response = client.execute(request)) {
             int statusCode = response.getStatusLine().getStatusCode();
             log.info("httpStatus: " + statusCode);
             if (statusCode == HttpStatus.SC_OK) {
@@ -115,6 +99,7 @@ public class JiraServiceImpl implements JiraService {
             log.error("Jira http error", e);
             rst.setException(e.getMessage());
         }
+        log.info("Total time: {}ms", TimeTools.now() - startTime);
         return rst;
     }
 
