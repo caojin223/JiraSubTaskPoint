@@ -59,8 +59,13 @@ public class JiraProperties {
      */
     String jql;
 
+//    /**
+//     * jira查询subtask的jql
+//     */
+//    String jqlBySprint;
+
     /**
      * jira查询subtask的jql
      */
-    String jqlQuery;
+    String jqlByProject;
 }

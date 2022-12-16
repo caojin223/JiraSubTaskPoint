@@ -8,10 +8,10 @@ import java.util.Date;
 @Getter
 @Setter
 public class JiraSprintModel {
-    int id;
+    Integer id;
     String state;
     String name;
     Date startDate;
     Date endDate;
-    int originBoardId;
+//    int originBoardId;
 }

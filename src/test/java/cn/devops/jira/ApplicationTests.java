@@ -25,7 +25,7 @@ class ApplicationTests {
         Assert.isTrue(projects.size() > 0, "项目不能为空");
         for (JiraProjectModel project : projects) {
             List<JiraSprintResModel> sprints = jiraService.getSubtaskByProjectKey(project.getKey());
-            log.info(JSONObject.toJSONString(sprints));
+            log.info("Project name: {}, json: {}", project.getName(), JSONObject.toJSONString(sprints));
         }
     }
 }

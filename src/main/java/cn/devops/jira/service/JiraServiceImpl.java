@@ -80,7 +80,7 @@ public class JiraServiceImpl implements JiraService {
         return rst;
     }
 
-    private JiraHttpResponse postJqlRequest(List<Integer> sprintIds) {
+    private JiraHttpResponse postJqlRequest(String jql) {
         JiraHttpResponse rst = new JiraHttpResponse();
         HttpPost httpPost = new HttpPost(jiraProperties.getHost() + jiraProperties.getJql());
         log.info("POST url: " + httpPost.getURI());
@@ -93,8 +93,7 @@ public class JiraServiceImpl implements JiraService {
         json.put("maxResults", -1);
         JSONArray fields = json.putArray("fields");
         fields.addAll(Arrays.asList("summary", "assignee", "status", taskPointKey, sprintKey));
-        String ids = sprintIds.stream().map(Object::toString).collect(Collectors.joining(","));
-        json.put("jql", String.format(jiraProperties.getJqlQuery(), ids));
+        json.put("jql", jql);
         StringEntity bodyEntity = new StringEntity(json.toString(), "utf-8");
         bodyEntity.setContentEncoding("UTF-8");
         bodyEntity.setContentType("application/json");
@@ -167,80 +166,94 @@ public class JiraServiceImpl implements JiraService {
         return rst;
     }
 
-    private int getSprintId(JSONObject issue) {
+    private JiraSprintResModel getSprintByIssue(Map<Integer, JiraSprintResModel> sprintMap, JSONObject issue) {
         JSONObject fields = issue.getJSONObject("fields");
         String sprintStr = fields.getJSONArray(sprintKey).getString(0);
         sprintStr = sprintStr.substring(sprintStr.indexOf("[") + 1, sprintStr.length() - 1);
         String[] split = sprintStr.split(",");
+        JSONObject json = new JSONObject();
         for (String item : split) {
             String[] items = item.split("=");
-            if ("id".equals(items[0])) {
-                return Integer.parseInt(items[1]);
+            if (items.length == 2) {
+                json.put(items[0], "<null>".equals(items[1]) ? null : items[1]);
             }
         }
-        return -1;
+        Integer sprintId = json.getInteger("id");
+        return sprintMap.computeIfAbsent(sprintId, v -> json.to(JiraSprintResModel.class));
     }
 
-    private void addTaskToAssignee(JSONObject issue, Map<Integer, Map<String, JiraAssigneeResModel>> sprintMap) {
-        JiraSubtaskModel task = new JiraSubtaskModel();
-        task.setId(issue.getString("id"));
-        task.setKey(issue.getString("key"));
-        JSONObject fields = issue.getJSONObject("fields");
-        task.setSummary(fields.getString("summary"));
-        task.setStatus(fields.getJSONObject("status").getString("name"));
-        task.setPoint(fields.getInteger(taskPointKey));
-        JSONObject assignee = fields.getJSONObject("assignee");
-        String assigneeName = assignee == null ? null : assignee.getString("key");
-        int sprintId = getSprintId(issue);
-        Map<String, JiraAssigneeResModel> map = sprintMap.computeIfAbsent(sprintId, v -> new HashMap<>());
-        JiraAssigneeResModel assigneeRes = map.computeIfAbsent(assigneeName, v -> {
-            JiraAssigneeResModel e;
-            if (assignee != null) {
-                e = assignee.to(JiraAssigneeResModel.class);
-                e.setAvatarUrl(assignee.getJSONObject("avatarUrls").getString("48x48"));
-            } else {
-                e = new JiraAssigneeResModel();
+    private List<JiraSprintResModel> createSprintsByIssues(JSONArray issues) {
+        // sprintId -> sprint
+        Map<Integer, JiraSprintResModel> sprintMap = new HashMap<>();
+        // sprintId -> assigneeKey -> assignee
+        Map<Integer, Map<String, JiraAssigneeResModel>> sprint2AssigneeMap = new HashMap<>();
+        for (int i = 0; i < issues.size(); i++) {
+            JSONObject issue = issues.getJSONObject(i);
+
+            JiraSubtaskModel task = new JiraSubtaskModel();
+            task.setId(issue.getString("id"));
+            task.setKey(issue.getString("key"));
+            JSONObject fields = issue.getJSONObject("fields");
+            task.setSummary(fields.getString("summary"));
+            task.setStatus(fields.getJSONObject("status").getString("name"));
+            task.setPoint(fields.getInteger(taskPointKey));
+            JSONObject assignee = fields.getJSONObject("assignee");
+            String assigneeKey = assignee == null ? null : assignee.getString("key");
+
+            JiraSprintResModel sprint = getSprintByIssue(sprintMap, issue);
+
+            // assigneeKey -> assignee
+            Map<String, JiraAssigneeResModel> assigneeMap =
+                    sprint2AssigneeMap.computeIfAbsent(sprint.getId(), v -> new HashMap<>());
+            JiraAssigneeResModel assigneeRes = assigneeMap.computeIfAbsent(assigneeKey, v -> {
+                JiraAssigneeResModel e;
+                if (assignee != null) {
+                    e = assignee.to(JiraAssigneeResModel.class);
+                    e.setAvatarUrl(assignee.getJSONObject("avatarUrls").getString("48x48"));
+                } else {
+                    e = new JiraAssigneeResModel();
+                }
+                return e;
+            });
+            assigneeRes.setPointCount(assigneeRes.getPointCount() + task.getPoint());
+            assigneeRes.getSubtasks().add(task);
+        }
+
+        List<JiraSprintResModel> sprints = sprintMap.values().stream()
+                // 先Active，再Future
+                .sorted((o1, o2) -> {
+                    if (Objects.equals(o1.getState(), o2.getState())) {
+                        return Integer.compare(o1.getId(), o2.getId());
+                    } else {
+                        return o1.getState().compareTo(o2.getState());
+                    }
+                })
+                .collect(Collectors.toList());
+        for (JiraSprintResModel sprint : sprints) {
+            Map<String, JiraAssigneeResModel> assigneeMap = sprint2AssigneeMap.get(sprint.getId());
+            JiraAssigneeResModel anonymous = assigneeMap.remove(null);
+            if (anonymous != null) {
+                sprint.getAssignees().add(anonymous);
             }
-            return e;
-        });
-        assigneeRes.setPointCount(assigneeRes.getPointCount() + task.getPoint());
-        assigneeRes.getSubtasks().add(task);
+            List<JiraAssigneeResModel> sortedAssignee = assigneeMap.values()
+                    .stream().sorted((o1, o2) -> Integer.compare(o2.getPointCount(), o1.getPointCount()))
+                    .collect(Collectors.toList());
+            sprint.getAssignees().addAll(sortedAssignee);
+        }
+        return sprints;
     }
 
     @Override
     public List<JiraSprintResModel> getSubtaskByProjectKey(String projectKey) {
-        List<JiraSprintResModel> rst = getSprintByProjectKey(projectKey).stream()
-                .map(JiraSprintResModel::init).collect(Collectors.toList());
-        if (rst.size() > 0) {
-            List<Integer> sprintIds = new ArrayList<>();
-            rst.forEach(e -> sprintIds.add(e.getId()));
-            Map<Integer, Map<String, JiraAssigneeResModel>> sprint2assigneeMap = new HashMap<>(rst.size());
-            JiraHttpResponse response = postJqlRequest(sprintIds);
-            if (response.isSuccess()) {
-                String body = response.getBody();
-                JSONObject json = JSONObject.parseObject(body);
-                JSONArray issues = json.getJSONArray("issues");
-                for (int i = 0; i < issues.size(); i++) {
-                    JSONObject issue = issues.getJSONObject(i);
-                    addTaskToAssignee(issue, sprint2assigneeMap);
-                }
-            }
-            for (JiraSprintResModel sprint : rst) {
-                Map<String, JiraAssigneeResModel> assigneeMap = sprint2assigneeMap.get(sprint.getId());
-                JiraAssigneeResModel nullAssignee = null;
-                if (assigneeMap.containsKey(null)) {
-                    nullAssignee = assigneeMap.remove(null);
-                }
-                List<JiraAssigneeResModel> assignees = assigneeMap.values().stream()
-                        .sorted((o1, o2) -> Integer.compare(o2.getPointCount(), o1.getPointCount()))
-                        .collect(Collectors.toList());
-                if (nullAssignee != null) {
-                    sprint.getAssignees().add(nullAssignee);
-                }
-                sprint.getAssignees().addAll(assignees);
-            }
+        List<JiraSprintResModel> rst = new ArrayList<>();
+        String jql = String.format(jiraProperties.getJqlByProject(), projectKey, jiraProperties.getPointName());
+        JiraHttpResponse response = postJqlRequest(jql);
+        if (response.isSuccess()) {
+            String body = response.getBody();
+            JSONObject json = JSONObject.parseObject(body);
+            JSONArray issues = json.getJSONArray("issues");
+            rst = createSprintsByIssues(issues);
         }
-
         return rst;
     }
 
