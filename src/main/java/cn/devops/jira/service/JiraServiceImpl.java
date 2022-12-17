@@ -74,7 +74,9 @@ public class JiraServiceImpl implements JiraService {
         JSONArray fields = json.putArray("fields");
         fields.addAll(Arrays.asList("summary", "assignee", "status", taskPointKey, sprintKey));
         json.put("jql", jql);
-        StringEntity bodyEntity = new StringEntity(json.toString(), "utf-8");
+        String jsonStr = json.toString();
+        log.info("Jql body: {}", jsonStr);
+        StringEntity bodyEntity = new StringEntity(jsonStr, "utf-8");
         bodyEntity.setContentEncoding("UTF-8");
         bodyEntity.setContentType("application/json");
         httpPost.setEntity(bodyEntity);
