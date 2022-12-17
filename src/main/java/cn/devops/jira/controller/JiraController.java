@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @Slf4j
 @RestController
 @RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
@@ -37,8 +39,19 @@ public class JiraController {
 
     @GetMapping("subtask")
     public ResponseResult<?> getSubtaskByProjectKey(
-            @RequestParam(name = "projectKey") String projectKey) {
-        log.info("getSubtaskByProjectKey: {}", projectKey);
-        return ResponseHandler.success(TimeTools.now(), jiraService.getSubtaskByProjectKey(projectKey));
+            @RequestParam(name = "projectKey", required = false) String projectKey,
+            @RequestParam(name = "sprintIds", required = false) List<Integer> sprintIds
+    ) {
+        if (sprintIds != null && !sprintIds.isEmpty()) {
+            log.info("getSubtaskBySprintIds: {}", sprintIds);
+            return ResponseHandler.success(TimeTools.now(), jiraService.getSubtaskBySprintIds(sprintIds));
+        } else if (projectKey != null) {
+            log.info("getSubtaskByProjectKey: {}", projectKey);
+            return ResponseHandler.success(TimeTools.now(), jiraService.getSubtaskByProjectKey(projectKey));
+        } else {
+            log.error("getSubtask 需要参数 projectKey 或者 SprintIds");
+            return ResponseHandler.error(TimeTools.now(), null);
+        }
+
     }
 }

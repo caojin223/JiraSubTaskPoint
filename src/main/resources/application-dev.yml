@@ -9,6 +9,8 @@ jira:
   apiField: /rest/api/latest/field
   # /rest/agile的maxResults不能设置为-1，小于1时，会自动变为1
   apiBoards: /rest/agile/latest/board?projectKeyOrId=%s&maxResults=1000
-  apiSprint: /rest/agile/latest/board/%s/sprint?state=future,active&maxResults=1000
+#  apiSprint: /rest/agile/latest/board/%s/sprint?state=future,active&maxResults=1000
+  apiSprint: /rest/agile/latest/board/%s/sprint?maxResults=1000
   jql: /rest/api/latest/search
+  jqlBySprint: Sprint in (%s) And issuetype = 子任务 AND "%s" > 0
   jqlByProject: project in (%s) AND issuetype = 子任务 AND "%s" > 0 AND Sprint not in closedSprints()

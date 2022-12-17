@@ -35,6 +35,12 @@ public class JiraServiceImpl implements JiraService {
 
     CloseableHttpClient client = HttpClients.createDefault();
 
+    Map<String, Integer> sprintSort = new HashMap<String, Integer>() {{
+        put("active", 1);
+        put("future", 2);
+        put("closed", 3);
+    }};
+
     private final JiraProperties jiraProperties;
 
     public JiraServiceImpl(JiraProperties jiraProperties) {
@@ -147,7 +153,14 @@ public class JiraServiceImpl implements JiraService {
                 }
             }
         }
-        rst.sort(Comparator.comparingInt(JiraSprintModel::getId));
+        // 先Active，再Future
+        rst.sort((o1, o2) -> {
+            if (Objects.equals(o1.getState(), o2.getState())) {
+                return Integer.compare(o2.getId(), o1.getId());
+            } else {
+                return Integer.compare(sprintSort.get(o1.getState()), sprintSort.get(o2.getState()));
+            }
+        });
         return rst;
     }
 
@@ -208,9 +221,9 @@ public class JiraServiceImpl implements JiraService {
                 // 先Active，再Future
                 .sorted((o1, o2) -> {
                     if (Objects.equals(o1.getState(), o2.getState())) {
-                        return Integer.compare(o1.getId(), o2.getId());
+                        return Integer.compare(o2.getId(), o1.getId());
                     } else {
-                        return o1.getState().compareTo(o2.getState());
+                        return Integer.compare(sprintSort.get(o1.getState()), sprintSort.get(o2.getState()));
                     }
                 })
                 .collect(Collectors.toList());
@@ -238,6 +251,23 @@ public class JiraServiceImpl implements JiraService {
             JSONObject json = JSONObject.parseObject(body);
             JSONArray issues = json.getJSONArray("issues");
             rst = createSprintsByIssues(issues);
+        }
+        return rst;
+    }
+
+    @Override
+    public List<JiraSprintResModel> getSubtaskBySprintIds(List<Integer> sprintIds) {
+        List<JiraSprintResModel> rst = new ArrayList<>();
+        if (!sprintIds.isEmpty()) {
+            String ids = sprintIds.stream().map(Object::toString).collect(Collectors.joining(","));
+            String jql = String.format(jiraProperties.getJqlBySprint(), ids, jiraProperties.getPointName());
+            JiraHttpResponse response = postJqlRequest(jql);
+            if (response.isSuccess()) {
+                String body = response.getBody();
+                JSONObject json = JSONObject.parseObject(body);
+                JSONArray issues = json.getJSONArray("issues");
+                rst = createSprintsByIssues(issues);
+            }
         }
         return rst;
     }

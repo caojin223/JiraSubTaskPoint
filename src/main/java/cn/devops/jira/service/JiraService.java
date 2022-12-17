@@ -17,5 +17,7 @@ public interface JiraService {
 
     List<JiraSprintResModel> getSubtaskByProjectKey(String projectKey);
 
+    List<JiraSprintResModel> getSubtaskBySprintIds(List<Integer> sprintIds);
+
     void disposeHttp();
 }
