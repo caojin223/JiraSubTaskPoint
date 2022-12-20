@@ -11,5 +11,6 @@ public class JiraSubtaskModel {
     String summary;
     String type = "subtask";
     String status;
+    String url;
     int point;
 }

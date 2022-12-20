@@ -197,6 +197,12 @@ public class JiraServiceImpl implements JiraService {
             task.setSummary(fields.getString("summary"));
             task.setStatus(fields.getJSONObject("status").getString("name"));
             task.setPoint(fields.getInteger(taskPointKey));
+            String host = jiraProperties.getHost();
+            if (!host.endsWith("/")) {
+                host += "/";
+            }
+            String url = String.format("%sbrowse/%s", host, issue.getString("key"));
+            task.setUrl(url);
             JSONObject assignee = fields.getJSONObject("assignee");
             String assigneeKey = assignee == null ? null : assignee.getString("key");
 
