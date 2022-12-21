@@ -54,4 +54,9 @@ public class JiraController {
         }
 
     }
+
+    @GetMapping("health")
+    public boolean checkHealth() {
+        return true;
+    }
 }
