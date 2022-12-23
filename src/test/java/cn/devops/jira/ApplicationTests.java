@@ -6,7 +6,6 @@ import cn.devops.jira.model.JiraSprintResModel;
 import cn.devops.jira.service.JiraService;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
-import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.util.Assert;
@@ -21,7 +20,7 @@ class ApplicationTests {
     @Autowired
     JiraService jiraService;
 
-    @Test
+//    @Test
     void testPrintAllSubTasksByProjectKey() {
         List<JiraProjectModel> projects = jiraService.getProjects();
         Assert.isTrue(projects.size() > 0, "项目不能为空");
@@ -31,7 +30,7 @@ class ApplicationTests {
         }
     }
 
-    @Test
+//    @Test
     void testPrintAllSubTasksBySprintIds() {
         List<JiraProjectModel> projects = jiraService.getProjects();
         Assert.isTrue(projects.size() > 0, "项目不能为空");
